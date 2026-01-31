@@ -1,0 +1,28 @@
+name: Rotate CoC API Keys
+on:
+  schedule:
+    - cron: '5 * * * *' # Runs every 1 minute
+  workflow_dispatch:      # Allows manual trigger
+
+jobs:
+  rotate-keys:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install Dependencies
+        run: pip install coc.py
+
+      - name: Run Rotation
+        env:
+          COC_EMAIL: ${{ secrets.COC_EMAIL }}
+          COC_PASSWORD: ${{ secrets.COC_PASSWORD }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: python rotate_keys.py
