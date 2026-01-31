@@ -1,0 +1,29 @@
+name = "clash-mcp-server"
+main = "worker.js"
+compatibility_flags = [ "nodejs_compat" ]
+compatibility_date = "2024-09-23"
+
+# Environment variables (non-secret)
+[vars]
+ENVIRONMENT = "production"
+
+# KV Namespaces
+[[kv_namespaces]]
+binding = "CLASH_DATA"
+id = "ec747f0c35c546179ea58a32f9f110d3"  # Replace with ID from step 5
+preview_id = "581edcb9e89b49ebbdf9f7a489c798ae"  # Replace with preview ID
+
+[ai]
+binding = "AI"
+
+# For custom domains (optional)
+# routes = [
+#   { pattern = "clash-api.yourdomain.com/*", zone_name = "yourdomain.com" }
+# ]
+
+[observability]
+enabled = true
+
+# Development server settings
+[dev]
+port = 8787
