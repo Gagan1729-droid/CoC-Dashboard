@@ -12,11 +12,14 @@ async def rotate_clash_key():
         try:
             # Logs in and ensures a key exists for the current runner's IP
             await client.login(email, password)
+  
+            keys = client.http.keys
             try:
-                key_object = next(client.http.keys)
-                new_token = key_object.key
-            except (StopIteration, AttributeError):
-                raise Exception("The key rotation cycle is empty. Ensure you haven't reached the 10-key limit.")
+                key_info = keys[0]
+            except TypeError:
+                key_info = next(keys)
+            
+            new_token = key_info.key if hasattr(key_info, "key") else key_info
             
             # Update the secret in Cloudflare using Wrangler
             process = subprocess.run(
