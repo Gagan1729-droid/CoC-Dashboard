@@ -1,23 +1,69 @@
-Clash of Clans MCP server!
+# 🚀 Onboarding Guide
 
-For usage with Claude Desktop, you can update the `claude_desktop_config.json` file to register this server.
+Follow these steps to get your own instance of the Clash of Clans MCP server up and running!
 
-```json
-{
-    "mcpServers": {
-        "Clash of Clans": {
-            "command": "npx",
-            "args": [
-                "-y",
-                "mcp-server-clash-of-clans"
-            ],
-            "env": {
-                "CLASH_API_KEY": "<your-api-key>"
-            }
-        }
-    }
-}
-```
+## Step 1: Set Up the Relay
+
+Since Cloudflare Workers don't have a static IP address, we need to route requests through a relay with a stable address that we can whitelist in the Clash of Clans Developer portal. We'll use `ngrok` to create a secure tunnel to our local machine.
+
+1.  **Install ngrok:** If you don't have it, download and install it from the [ngrok website](https://ngrok.com/download).
+
+2.  **Expose your local relay server:** Open a terminal and run the following command to point ngrok to your local port 3000.
+    ```bash
+    ngrok http 3000
+    ```
+3.  **Start the relay:** In another terminal, start the local relay server.
+    ```bash
+    node relay.js
+    ```
+Keep both of these terminals running. ngrok will give you a public URL (e.g., `https://random-string.ngrok-free.app`)—copy it for the next steps.
+
+> **Note:** If you have a server with a static IP, you can deploy `relay.js` there and use your server's IP address instead of ngrok.
+
+## Step 2: Get a Clash of Clans API Key
+
+1.  **Create a developer account:** Go to the [Clash of Clans Developer Portal](https://developer.clashofclans.com/) and create an account.
+
+2.  **Create an API Key:** Once logged in, create a new API key.
+
+3.  **Whitelist your IP:** This is a crucial step. In the key creation screen, you must add the IP address from your ngrok tunnel (or your static server IP) to the list of allowed IPs. You can find the ngrok IP address in the "Host" section of your running ngrok tunnel details.
+
+    ![ngrok IP](https://i.imgur.com/gYV2fC7.png)
+
+## Step 3: Create and Deploy the Cloudflare Worker
+
+1.  **Log in to Cloudflare:** Go to your [Cloudflare Dashboard](https://dash.cloudflare.com/).
+
+2.  **Create a Worker:** Navigate to the "Workers & Pages" section and click "Create application". Choose "Create Worker" and give it a name.
+
+3.  **Add the Worker Code:** Copy the entire content of the `worker.js` file from this project and paste it into the Cloudflare editor, replacing any default code.
+
+4.  **Add Secrets and Variables:**
+    *   Go to your worker's **Settings** -> **Variables**.
+    *   Add a secret for your API key:
+        *   **Variable name:** `CLASH_API_KEY`
+        *   **Value:** Your Clash of Clans API key from Step 2.
+        *   Click "Encrypt" to save it securely.
+    *   Add a variable for the proxy URL:
+         *   **Variable name:** `PROXY_URL`
+         *   **Value:** Your ngrok forwarding URL from Step 1 (e.g., `https://random-string.ngrok-free.app`).
+
+5.  **Deploy:** Save and deploy your worker! Your Clash of Clans server is now live.
+
+## (Optional) Local Development
+
+To run and test the worker on your local machine:
+
+1.  **Create a `.dev.vars` file:** In the root of the project, create a new file named `.dev.vars`.
+
+2.  **Add your API key:** Add the following line to the file, replacing the placeholder with your actual key:
+    ```
+    CLASH_API_KEY="<your-clash-of-clans-api-key>"
+    ```
+3.  **Run with Wrangler:** Use the Cloudflare Wrangler CLI to run the worker locally. This will automatically pick up the variables from your `.dev.vars` file.
+    ```bash
+    wrangler dev
+    ```
 
 # Available tools
 
