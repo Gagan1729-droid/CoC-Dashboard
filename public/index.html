@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clash of Clans Dashboard</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/prop-types/prop-types.min.js"></script>
+    <script src="https://unpkg.com/recharts@2.12.2/umd/Recharts.js"></script>
+    <style>
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        
+        .trophy-icon::before {
+            content: "🏆";
+            margin-right: 4px;
+        }
+        
+        .star-icon::before {
+            content: "⭐";
+            margin-right: 4px;
+        }
+        
+        .loading-spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #3498db;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .stat-card {
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+        }
+        
+        .resource-bar {
+            height: 8px;
+            background: linear-gradient(90deg, #4CAF50 0%, #8BC34A 100%);
+            border-radius: 4px;
+            transition: width 0.5s ease;
+        }
+        
+        .tab-active {
+            border-bottom: 3px solid #3B82F6;
+            color: #3B82F6;
+        }
+        
+        .skeleton {
+            animation: pulse 1.5s ease-in-out infinite;
+            background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+            background-size: 200% 100%;
+        }
+        
+        @keyframes pulse {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    
+    <script type="text/babel">
+        // Load components from external files
+    </script>
+    <script type="text/babel" src="components/Shared.js"></script>
+    <script type="text/babel" src="components/Header.js"></script>
+    <script type="text/babel" src="components/Navigation.js"></script>
+    <script type="text/babel" src="components/LoginForm.js"></script>
+    <script type="text/babel" src="components/OverviewTab.js"></script>
+    <script type="text/babel" src="components/TroopsTab.js"></script>
+    <script type="text/babel" src="components/WarsTab.js"></script>
+    <script type="text/babel" src="components/ClanTab.js"></script>
+    <script type="text/babel" src="components/ScoutTab.js"></script>
+    <script type="text/babel" src="components/AIAnalysisTab.js"></script>
+    
+    <script type="text/babel">
+        const { useState, useEffect, useCallback, useMemo } = React;
+        
+        // Safe Recharts destructuring to prevent white screen if CDN fails
+        const Recharts = window.Recharts || {
+            LineChart: () => null, 
+            Line: () => null, 
+            XAxis: () => null, 
+            YAxis: () => null, 
+            CartesianGrid: () => null, 
+            Tooltip: () => null, 
+            Legend: () => null, 
+            ResponsiveContainer: ({children}) => <div className="w-full h-full flex items-center justify-center bg-red-50 text-red-500 border border-red-200 rounded">Graph library not loaded. Check internet connection.</div>
+        };
+        const { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } = Recharts;
+
+        // MCP Server Configuration
+        // const MCP_SERVER_URL = 'https://clash-mcp-server.gangz.workers.dev';
+        // const MCP_SERVER_URL = 'http://localhost:8787';
+        const MCP_SERVER_URL = window.location.origin;
+
+        // Main Dashboard Component
+        function ClashDashboard() {
+            const [playerTag, setPlayerTag] = useState(localStorage.getItem('playerTag') || '');
+            const [viewingTag, setViewingTag] = useState('');
+            const [isLoggedIn, setIsLoggedIn] = useState(false);
+            const [playerData, setPlayerData] = useState(null);
+            const [clanData, setClanData] = useState(null);
+            const [warData, setWarData] = useState(null);
+            const [warLogData, setWarLogData] = useState(null);
+            const [cwlData, setCwlData] = useState(null);
+            const [capitalRaidsData, setCapitalRaidsData] = useState(null);
+            const [historyData, setHistoryData] = useState([]);
+            const [loading, setLoading] = useState(false);
+            const [error, setError] = useState('');
+            const [activeTab, setActiveTab] = useState('overview');
+            const [aiAnalysis, setAiAnalysis] = useState('');
+            const [analyzingBattle, setAnalyzingBattle] = useState(false);
+            const [loadingStates, setLoadingStates] = useState({
+                player: false,
+                clan: false,
+                war: false,
+                warLog: false,
+                cwl: false,
+                raids: false
+            });
+
+            // Load player data when logged in
+            useEffect(() => {
+                const savedTag = localStorage.getItem('playerTag');
+                if (savedTag) {
+                    setPlayerTag(savedTag);
+                    setViewingTag(savedTag);
+                    setIsLoggedIn(true);
+                    loadPlayerData(savedTag);
+                }
+            }, []);
+
+            const formatTag = (tag) => {
+                tag = tag.trim().toUpperCase();
+                if (!tag.startsWith('#')) {
+                    tag = '#' + tag;
+                }
+                return tag;
+            };
+
+            const handleLogin = async (e) => {
+                e.preventDefault();
+                const formattedTag = formatTag(playerTag);
+                setLoading(true);
+                setError('');
+                
+                try {
+                    await loadPlayerData(formattedTag);
+                    localStorage.setItem('playerTag', formattedTag);
+                    setViewingTag(formattedTag);
+                    setIsLoggedIn(true);
+                } catch (err) {
+                    setError(err.message || 'Failed to load player data');
+                    setIsLoggedIn(false);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            const loadPlayerData = async (tag) => {
+                setLoading(true);
+                setError('');
+                
+                try {
+                    // Load player data
+                    setLoadingStates(prev => ({ ...prev, player: true }));
+                    const playerResponse = await fetchPlayerData(tag);
+                    setPlayerData(playerResponse);
+                    setLoadingStates(prev => ({ ...prev, player: false }));
+                    
+                    // If player is in a clan, load clan-related data
+                    if (playerResponse.clan) {
+                        // Load clan data
+                        setLoadingStates(prev => ({ ...prev, clan: true }));
+                        try {
+                            const clanResponse = await fetchClanData(playerResponse.clan.tag);
+                            setClanData(clanResponse);
+                        } catch (e) {
+                            console.log('Failed to load clan data:', e);
+                        }
+                        setLoadingStates(prev => ({ ...prev, clan: false }));
+                        
+                        // Load war data (may not exist)
+                        setLoadingStates(prev => ({ ...prev, war: true }));
+                        try {
+                            const warResponse = await fetchCurrentWar(playerResponse.clan.tag);
+                            if (warResponse.state !== 'notInWar') {
+                                setWarData(warResponse);
+                            } else {
+                                setWarData(null);
+                            }
+                        } catch (e) {
+                            console.log('No active war or war is private');
+                            setWarData(null);
+                        }
+                        setLoadingStates(prev => ({ ...prev, war: false }));
+                        
+                        // Load war log (may be private)
+                        setLoadingStates(prev => ({ ...prev, warLog: true }));
+                        try {
+                            const warLogResponse = await fetchWarLog(playerResponse.clan.tag);
+                            setWarLogData(warLogResponse);
+                        } catch (e) {
+                            console.log('War log is private');
+                            setWarLogData(null);
+                        }
+                        setLoadingStates(prev => ({ ...prev, warLog: false }));
+                        
+                        // Load CWL data (may not be in season)
+                        setLoadingStates(prev => ({ ...prev, cwl: true }));
+                        try {
+                            const cwlResponse = await fetchCWLData(playerResponse.clan.tag);
+                            setCwlData(cwlResponse);
+                        } catch (e) {
+                            console.log('No CWL data available');
+                            setCwlData(null);
+                        }
+                        setLoadingStates(prev => ({ ...prev, cwl: false }));
+                        
+                        // Load capital raids
+                        setLoadingStates(prev => ({ ...prev, raids: true }));
+                        try {
+                            const raidsResponse = await fetchCapitalRaids(playerResponse.clan.tag);
+                            setCapitalRaidsData(raidsResponse);
+                        } catch (e) {
+                            console.log('No capital raids data');
+                            setCapitalRaidsData(null);
+                        }
+                        setLoadingStates(prev => ({ ...prev, raids: false }));
+
+                        // Load history data
+                        try {
+                            const historyResponse = await fetchPlayerHistory(tag);
+                            setHistoryData(historyResponse);
+                        } catch (e) {
+                            console.log('No history data available');
+                        }
+                    }
+                } catch (err) {
+                    throw new Error(err.message || 'Failed to load player data. Please check the player tag.');
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            // Real API calls to MCP server
+            const fetchPlayerData = async (tag) => {
+                const response = await fetch(`${MCP_SERVER_URL}/get-player?tag=${encodeURIComponent(tag)}`);
+                
+                if (!response.ok) {
+                    if (response.status === 404) {
+                        throw new Error('Player not found. Please check the tag.');
+                    } else if (response.status === 403) {
+                        throw new Error('Access forbidden. API key issue.');
+                    } else {
+                        throw new Error(`API Error: ${response.status}`);
+                    }
+                }
+                
+                return await response.json();
+            };
+
+            const fetchClanData = async (tag) => {
+                const response = await fetch(`${MCP_SERVER_URL}/get-clan?tag=${encodeURIComponent(tag)}`);
+                
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch clan data: ${response.status}`);
+                }
+                
+                return await response.json();
+            };
+
+            const fetchCurrentWar = async (tag) => {
+                const response = await fetch(`${MCP_SERVER_URL}/get-current-war?tag=${encodeURIComponent(tag)}`);
+                
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch war data: ${response.status}`);
+                }
+                
+                return await response.json();
+            };
+
+            const fetchWarLog = async (tag) => {
+                const response = await fetch(`${MCP_SERVER_URL}/get-war-log?tag=${encodeURIComponent(tag)}&limit=10`);
+                
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch war log: ${response.status}`);
+                }
+                
+                return await response.json();
+            };
+
+            const fetchCWLData = async (tag) => {
+                const response = await fetch(`${MCP_SERVER_URL}/clan-war-league-info?tag=${encodeURIComponent(tag)}`);
+                
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch CWL data: ${response.status}`);
+                }
+                
+                return await response.json();
+            };
+
+            const fetchCapitalRaids = async (tag) => {
+                const response = await fetch(`${MCP_SERVER_URL}/get-capital-raids?tag=${encodeURIComponent(tag)}&limit=5`);
+                
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch capital raids: ${response.status}`);
+                }
+                
+                return await response.json();
+            };
+
+            const fetchPlayerHistory = async (tag) => {
+                const response = await fetch(`${MCP_SERVER_URL}/get-player-history?tag=${encodeURIComponent(tag)}`);
+                
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch history: ${response.status}`);
+                }
+                
+                return await response.json();
+            };
+
+            const generateAIAnalysis = async () => {
+                setAnalyzingBattle(true);
+                
+                try {
+                    // Generate AI analysis based on real player data
+                    const analysis = await simulateAIAnalysis(playerData, warData, clanData);
+                    setAiAnalysis(analysis);
+                } catch (err) {
+                    setError('Failed to generate AI analysis');
+                } finally {
+                    setAnalyzingBattle(false);
+                }
+            };
+
+            const simulateAIAnalysis = async (player, war, clan) => {
+                // Generate strategic insights based on actual player data
+                const thLevel = player.townHallLevel;
+                const trophies = player.trophies;
+                const warStars = player.warStars;
+                const attackWins = player.attackWins;
+                const defenseWins = player.defenseWins;
+                const donations = player.donations;
+                const received = player.donationsReceived;
+                
+                // Calculate some metrics
+                const winRate = attackWins > 0 ? ((attackWins / (attackWins + defenseWins)) * 100).toFixed(1) : 0;
+                const donationRatio = received > 0 ? (donations / received).toFixed(2) : donations > 0 ? donations : 0;
+                
+                // Get hero levels
+                const heroes = player.heroes || [];
+                const heroSummary = heroes.length > 0 
+                    ? heroes.map(h => `${h.name}: Lv ${h.level}/${h.maxLevel}`).join(', ')
+                    : 'No heroes unlocked yet';
+                
+                // League info
+                const leagueName = player.league?.name || 'Unranked';
+                
+                const insights = `
+**🎯 Battle Performance Analysis for ${player.name}**
+
+**📊 Current Status:**
+- Town Hall Level: ${thLevel}
+- Trophy Count: ${trophies.toLocaleString()} (Best: ${player.bestTrophies.toLocaleString()})
+- League: ${leagueName}
+- Experience Level: ${player.expLevel}
+- War Stars Earned: ${warStars.toLocaleString()}
+
+**⚔️ Combat Statistics:**
+- Attack Wins: ${attackWins.toLocaleString()}
+- Defense Wins: ${defenseWins.toLocaleString()}
+- Win Rate: ${winRate}%
+- Attack Efficiency: ${attackWins > 100 ? 'Strong' : attackWins > 50 ? 'Moderate' : 'Developing'}
+
+**🎖️ Heroes:**
+${heroSummary}
+
+**🤝 Clan Contribution:**
+- Donations Given: ${donations.toLocaleString()}
+- Donations Received: ${received.toLocaleString()}
+- Donation Ratio: ${donationRatio}${donationRatio > 1 ? ' (Excellent contributor!)' : donationRatio > 0.5 ? ' (Good contributor)' : ' (Consider donating more)'}
+${clan ? `- Clan: ${clan.name} (Level ${clan.clanLevel})` : ''}
+
+**💪 Strengths:**
+${trophies > 3000 ? '1. Strong trophy count indicates good attacking skills' : '1. Building up trophy base - keep pushing!'}
+${donationRatio > 1 ? '2. Excellent clan contributor with strong donation ratio' : '2. Room to improve clan contribution'}
+${warStars > 500 ? '3. Experienced war attacker with proven track record' : warStars > 100 ? '3. Growing war experience' : '3. Focus on war participation to earn more stars'}
+${heroes.length > 0 ? `4. Heroes at reasonable levels for TH${thLevel}` : '4. Unlock heroes to strengthen attacks'}
+
+**🎯 Recommended Improvements:**
+1. **Attack Strategy**: ${thLevel >= 11 ? 'Practice hybrid attacks with Super Troops' : thLevel >= 9 ? 'Master Queen Walk and LavaLoon strategies' : 'Focus on Dragons and Hog Riders for TH' + thLevel}
+2. **Trophy Pushing**: ${trophies < 2000 ? 'Aim for Crystal League for better loot' : trophies < 3000 ? 'Push to Masters League for max loot bonus' : 'Consider pushing to Champions for prestige'}
+3. **Upgrade Priority**: 
+   - Heroes: ${heroes.length > 0 ? 'Keep upgrading continuously - they are crucial' : 'Unlock Barbarian King ASAP'}
+   - Troops: Max out your favorite war attack strategy troops
+   - Defenses: Prioritize Air Defenses and Inferno Towers
+4. **War Participation**: ${warStars < 100 ? 'Join more clan wars to earn stars and experience' : 'Continue strong war performance'}
+
+**🛡️ Defense Tips:**
+- Keep base layout updated for TH${thLevel}
+- Centralize Town Hall and Clan Castle
+- Spread out Air Defenses and Wizard Towers
+- Upgrade walls gradually but consistently
+
+${war ? `
+**⚔️ Current War Performance:**
+- War State: ${war.state === 'inWar' ? 'Active Battle Day' : war.state === 'preparation' ? 'Preparation Day' : 'War Ended'}
+- Your Clan: ${war.clan.stars} ⭐ (${war.clan.destructionPercentage.toFixed(1)}% destruction)
+- Opponent: ${war.opponent.stars} ⭐ (${war.opponent.destructionPercentage.toFixed(1)}% destruction)
+- Status: ${war.clan.stars > war.opponent.stars ? '🎉 Currently Winning!' : war.clan.stars < war.opponent.stars ? '⚠️ Need more attacks!' : '🤝 Tied - attack wisely!'}
+` : '**📅 War Status:** Not currently in war - stay prepared!'}
+
+**📈 Next Steps:**
+1. ${trophies < 2500 ? 'Farm resources in Crystal/Masters League' : 'Maintain trophy level and farm efficiently'}
+2. Practice attack strategies in Friendly Challenges
+3. Watch top players' replays for advanced techniques
+4. Max out current TH level before upgrading to TH${thLevel + 1}
+5. Keep heroes upgrading constantly (alternate between them)
+
+**💡 Pro Tips:**
+- Use training potions during raid weekends
+- Save builder potions for hero upgrades
+- Join active clan for max donations
+- Complete clan games for valuable rewards
+- Participate in Capital Raids every weekend
+
+Keep clashing! 🎮⚔️
+                `.trim();
+                
+                return insights;
+            };
+
+            const handleLogout = () => {
+                localStorage.removeItem('playerTag');
+                setPlayerTag('');
+                setViewingTag('');
+                setIsLoggedIn(false);
+                setPlayerData(null);
+                setClanData(null);
+                setWarData(null);
+                setWarLogData(null);
+                setCwlData(null);
+                setCapitalRaidsData(null);
+                setHistoryData([]);
+                setAiAnalysis('');
+            };
+
+            const switchPlayer = async (tag) => {
+                setViewingTag(tag);
+                await loadPlayerData(tag);
+            };
+
+            if (!isLoggedIn) {
+                return <LoginForm onLogin={handleLogin} playerTag={playerTag} setPlayerTag={setPlayerTag} loading={loading} error={error} />;
+            }
+
+            return (
+                <div className="min-h-screen p-4 md:p-8">
+                    <div className="max-w-7xl mx-auto">
+                        <Header playerData={playerData} onLogout={handleLogout} loading={loadingStates.player} />
+                        
+                        <Navigation activeTab={activeTab} setActiveTab={setActiveTab} />
+                        
+                        {error && <ErrorMessage message={error} onClose={() => setError('')} />}
+                        
+                        <div className="mt-6">
+                            {activeTab === 'overview' && (
+                                <OverviewTab 
+                                    playerData={playerData} 
+                                    clanData={clanData}
+                                    warData={warData}
+                                    historyData={historyData}
+                                    loading={loadingStates}
+                                />
+                            )}
+                            {activeTab === 'troops' && (
+                                <TroopsTab playerData={playerData} loading={loadingStates.player} />
+                            )}
+                            {activeTab === 'wars' && (
+                                <WarsTab 
+                                    warData={warData} 
+                                    warLogData={warLogData}
+                                    cwlData={cwlData}
+                                    loading={loadingStates}
+                                />
+                            )}
+                            {activeTab === 'clan' && (
+                                <ClanTab 
+                                    clanData={clanData} 
+                                    capitalRaidsData={capitalRaidsData}
+                                    loading={loadingStates}
+                                />
+                            )}
+                            {activeTab === 'scout' && (
+                                <ScoutTab fetchPlayerData={fetchPlayerData} />
+                            )}
+                            {activeTab === 'analysis' && (
+                                <AIAnalysisTab 
+                                    aiAnalysis={aiAnalysis}
+                                    onAnalyze={generateAIAnalysis}
+                                    analyzing={analyzingBattle}
+                                    playerData={playerData}
+                                />
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // Render the app
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        
+        // Check if external components loaded successfully
+        if (!window.Header || !window.StatCard) {
+            root.render(
+                <div className="min-h-screen flex items-center justify-center bg-gray-100 p-4 font-sans">
+                    <div className="bg-white p-8 rounded-xl shadow-xl max-w-2xl">
+                        <h1 className="text-2xl font-bold text-red-600 mb-4">⚠️ Local File Access Blocked</h1>
+                        <p className="mb-4 text-gray-700">
+                            Modern browsers prevent loading external script files when opening HTML files directly (<code>file://</code> protocol) due to CORS security policies.
+                        </p>
+                        <p className="mb-6 text-gray-700 font-semibold">
+                            To fix this, please run the included server script:
+                        </p>
+                        
+                        <div className="space-y-4">
+                            <div className="bg-gray-50 p-4 rounded border border-gray-200">
+                                <p className="font-bold text-gray-800 mb-2">1. Open Terminal/Command Prompt in this folder</p>
+                                <p className="text-sm text-gray-600 mb-2"><code>c:\Users\gagan\utilities\coc\application</code></p>
+                            </div>
+                            
+                            <div className="bg-gray-50 p-4 rounded border border-gray-200">
+                                <p className="font-bold text-gray-800 mb-2">2. Run the server</p>
+                                <code className="block bg-black text-green-400 p-3 rounded text-sm font-mono">
+                                    python serve_dashboard.py
+                                </code>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        } else {
+            root.render(<ClashDashboard />);
+        }
+    </script>
+</body>
+</html>

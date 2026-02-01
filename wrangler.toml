@@ -13,6 +13,10 @@ binding = "CLASH_DATA"
 id = "ec747f0c35c546179ea58a32f9f110d3"  # Replace with ID from step 5
 preview_id = "581edcb9e89b49ebbdf9f7a489c798ae"  # Replace with preview ID
 
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
 [ai]
 binding = "AI"
 

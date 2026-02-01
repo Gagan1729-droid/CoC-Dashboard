@@ -607,7 +607,7 @@ async function handleRequest(request, env, ctx) {
   }
 
   // Health check endpoint
-  if (path === '/health' || path === '/') {
+  if (path === '/health') {
     return jsonResponse({
       status: 'ok',
       message: 'Clash of Clans MCP Server',
@@ -732,8 +732,8 @@ async function handleRequest(request, env, ctx) {
       return jsonResponse(data);
     }
 
-    // Route not found
-    return errorResponse('Endpoint not found', 404);
+    // load the dashboard static assets if no path matched
+    return env.ASSETS.fetch(request);
 
   } catch (error) {
     console.error('Request error:', error);
