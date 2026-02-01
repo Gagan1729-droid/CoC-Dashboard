@@ -1,8 +1,10 @@
 # 🚀 Onboarding Guide
 
-Follow these steps to get your own instance of the Clash of Clans MCP server up and running!
+**🌟 Live Demo:** [https://clash-mcp-server.gangz.workers.dev/](https://clash-mcp-server.gangz.workers.dev/)
 
-## Step 1: Set Up the Relay
+Follow these steps to get your own instance of the Clash of Clans MCP server and Dashboard up and running!
+
+## Step 1: Set Up the Relay 📡
 
 Since Cloudflare Workers don't have a static IP address, we need to route requests through a relay with a stable address that we can whitelist in the Clash of Clans Developer portal. We'll use `ngrok` to create a secure tunnel to our local machine.
 
@@ -20,7 +22,7 @@ Keep both of these terminals running. ngrok will give you a public URL (e.g., `h
 
 > **Note:** If you have a server with a static IP, you can deploy `relay.js` there and use your server's IP address instead of ngrok.
 
-## Step 2: Get a Clash of Clans API Key
+## Step 2: Get a Clash of Clans API Key 🔑
 
 1.  **Create a developer account:** Go to the [Clash of Clans Developer Portal](https://developer.clashofclans.com/) and create an account.
 
@@ -36,7 +38,7 @@ Keep both of these terminals running. ngrok will give you a public URL (e.g., `h
         The IP address returned by the ping is what you need to whitelist.
     *   **Check the ngrok dashboard:** Log in to your [ngrok Dashboard](https://dashboard.ngrok.com/tunnels/agents) online, and you can see the IP addresses of your active tunnels.
 
-## Step 3: Create and Deploy the Cloudflare Worker
+## Step 3: Create and Deploy the Cloudflare Worker ☁️
 
 1.  **Log in to Cloudflare:** Go to your [Cloudflare Dashboard](https://dash.cloudflare.com/).
 
@@ -54,9 +56,9 @@ Keep both of these terminals running. ngrok will give you a public URL (e.g., `h
          *   **Variable name:** `PROXY_URL`
          *   **Value:** Your ngrok forwarding URL from Step 1 (e.g., `https://random-string.ngrok-free.app`).
 
-5.  **Deploy:** Save and deploy your worker! Your Clash of Clans server is now live.
+5.  **Deploy:** Save and deploy! Your API and Dashboard are now live at your worker's URL.
 
-## (Optional) Local Development
+## (Optional) Local Development 💻
 
 To run and test the worker on your local machine without `ngrok`:
 
@@ -77,6 +79,11 @@ To run and test the worker on your local machine without `ngrok`:
     *   In another terminal, start the worker with Wrangler:
         ```bash
         wrangler dev
+        ```
+    *   **Launch Dashboard:**
+        To load components correctly (avoiding CORS issues), run the local server:
+        ```bash
+        python public/serve_dashboard.py
         ```
 
 # Available tools
