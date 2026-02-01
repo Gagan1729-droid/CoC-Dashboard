@@ -21,11 +21,21 @@ function formatTag(tag) {
 /**
  * Helper function to make API calls to Clash of Clans API
  */
-async function fetchFromClashAPI(endpoint, apiKey) {
-  const response = await fetch(`${COC_API_BASE}${endpoint}`, {
+async function fetchFromClashAPI(endpoint, apiKey, env) {
+  // Configuration for your VPS Relay
+  const USE_PROXY = true; // Set to true after setting up your VPS
+  // Use environment variable for Proxy URL (e.g. https://xxxx.ngrok-free.app/relay)
+  const PROXY_URL = env.PROXY_URL || "http://localhost:3000/relay"; 
+  const RELAY_SECRET = env.RELAY_SECRET || "make-up-a-secure-password-here";
+
+  const targetUrl = `${COC_API_BASE}${endpoint}`;
+  const fetchUrl = USE_PROXY ? `${PROXY_URL}?url=${encodeURIComponent(targetUrl)}` : targetUrl;
+
+  const response = await fetch(fetchUrl, {
     headers: {
       'Authorization': `Bearer ${apiKey}`,
       'Accept': 'application/json',
+      ...(USE_PROXY ? { 'x-relay-auth': RELAY_SECRET } : {})
     },
   });
 
@@ -101,9 +111,56 @@ function errorResponse(message, status = 500) {
 }
 
 /**
+ * Record player stats to D1 Database
+ */
+async function recordPlayerStats(tag, data, env) {
+  if (!env.coc_stats) {
+    console.log('D1 binding coc_stats not found');
+    return;
+  }
+
+  const date = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+  
+  // Extract stats from achievements (Lifetime loot)
+  const gold = data.achievements.find(a => a.name === 'Gold Grab')?.value || 0;
+  const elixir = data.achievements.find(a => a.name === 'Elixir Escapade')?.value || 0;
+  const darkElixir = data.achievements.find(a => a.name === 'Heroic Heist')?.value || 0;
+  const trophies = data.trophies || 0;
+
+  try {
+    // Check if entry exists for today
+    const exists = await env.coc_stats.prepare(
+      'SELECT 1 FROM player_stats WHERE tag = ? AND date = ?'
+    ).bind(tag, date).first();
+
+    if (!exists) {
+      await env.coc_stats.prepare(
+        'INSERT INTO player_stats (tag, date, gold, elixir, dark_elixir, trophies) VALUES (?, ?, ?, ?, ?, ?)'
+      ).bind(tag, date, gold, elixir, darkElixir, trophies).run();
+    }
+  } catch (e) {
+    console.error('Failed to record stats:', e);
+  }
+}
+
+/**
+ * Get player history from D1
+ */
+async function getPlayerHistory(tag, env) {
+  if (!env.coc_stats) return [];
+
+  const formattedTag = formatTag(tag);
+
+  const { results } = await env.coc_stats.prepare(
+    'SELECT * FROM player_stats WHERE tag = ? ORDER BY date ASC'
+  ).bind(formattedTag).all();
+  return results || [];
+}
+
+/**
  * Get player information
  */
-async function getPlayer(tag, apiKey, env) {
+async function getPlayer(tag, apiKey, env, ctx) {
   const formattedTag = formatTag(tag);
   if (!formattedTag) {
     throw new Error('Invalid player tag');
@@ -118,10 +175,15 @@ async function getPlayer(tag, apiKey, env) {
   }
 
   // Fetch from API
-  const data = await fetchFromClashAPI(`/players/${formattedTag}`, apiKey);
+  const data = await fetchFromClashAPI(`/players/${formattedTag}`, apiKey, env);
   
   // Cache for 5 minutes
   await setCachedData(env, cacheKey, data, 300);
+
+  // Record stats to DB (fire and forget to not slow down response)
+  if (ctx && typeof ctx.waitUntil === 'function') {
+    ctx.waitUntil(recordPlayerStats(formattedTag, data, env));
+  }
   
   return data;
 }
@@ -144,7 +206,7 @@ async function getClan(tag, apiKey, env) {
   }
 
   // Fetch from API
-  const data = await fetchFromClashAPI(`/clans/${formattedTag}`, apiKey);
+  const data = await fetchFromClashAPI(`/clans/${formattedTag}`, apiKey, env);
   
   // Cache for 10 minutes
   await setCachedData(env, cacheKey, data, 600);
@@ -170,7 +232,7 @@ async function getCurrentWar(tag, apiKey, env) {
   }
 
   // Fetch from API
-  const data = await fetchFromClashAPI(`/clans/${formattedTag}/currentwar`, apiKey);
+  const data = await fetchFromClashAPI(`/clans/${formattedTag}/currentwar`, apiKey, env);
   
   // Cache for 2 minutes (wars are dynamic)
   await setCachedData(env, cacheKey, data, 120);
@@ -196,7 +258,7 @@ async function getWarLog(tag, apiKey, env, limit = 10) {
   }
 
   // Fetch from API
-  const data = await fetchFromClashAPI(`/clans/${formattedTag}/warlog?limit=${limit}`, apiKey);
+  const data = await fetchFromClashAPI(`/clans/${formattedTag}/warlog?limit=${limit}`, apiKey, env);
   
   // Cache for 30 minutes
   await setCachedData(env, cacheKey, data, 1800);
@@ -222,7 +284,7 @@ async function getClanWarLeagueGroup(tag, apiKey, env) {
   }
 
   // Fetch from API
-  const data = await fetchFromClashAPI(`/clans/${formattedTag}/currentwar/leaguegroup`, apiKey);
+  const data = await fetchFromClashAPI(`/clans/${formattedTag}/currentwar/leaguegroup`, apiKey, env);
   
   // Cache for 1 hour
   await setCachedData(env, cacheKey, data, 3600);
@@ -248,7 +310,7 @@ async function getClanWarLeagueWar(warTag, apiKey, env) {
   }
 
   // Fetch from API
-  const data = await fetchFromClashAPI(`/clanwarleagues/wars/${formattedTag}`, apiKey);
+  const data = await fetchFromClashAPI(`/clanwarleagues/wars/${formattedTag}`, apiKey, env);
   
   // Cache for 1 hour
   await setCachedData(env, cacheKey, data, 3600);
@@ -318,7 +380,7 @@ async function getCapitalRaidSeasons(tag, apiKey, env, limit = 10, before = null
   if (before) query += `&before=${encodeURIComponent(before)}`;
   if (after) query += `&after=${encodeURIComponent(after)}`;
 
-  const data = await fetchFromClashAPI(`/clans/${formattedTag}/capitalraidseasons?${query}`, apiKey);
+  const data = await fetchFromClashAPI(`/clans/${formattedTag}/capitalraidseasons?${query}`, apiKey, env);
   
   // Cache for 1 hour
   await setCachedData(env, cacheKey, data, 3600);
@@ -362,9 +424,180 @@ ${JSON.stringify(warData)}`;
 }
 
 /**
+ * Helper to summarize player data to reduce token count
+ */
+function summarizePlayer(data) {
+  if (!data) return null;
+  return {
+    name: data.name,
+    tag: data.tag,
+    townHallLevel: data.townHallLevel,
+    expLevel: data.expLevel,
+    trophies: data.trophies,
+    bestTrophies: data.bestTrophies,
+    warStars: data.warStars,
+    attackWins: data.attackWins,
+    defenseWins: data.defenseWins,
+    clan: data.clan ? { name: data.clan.name, tag: data.clan.tag, level: data.clan.clanLevel } : null,
+    league: data.league ? { name: data.league.name } : null,
+    heroes: data.heroes?.map(h => ({ name: h.name, level: h.level, maxLevel: h.maxLevel })),
+    troops: data.troops?.filter(t => t.village === 'home').map(t => ({ name: t.name, level: t.level, maxLevel: t.maxLevel })),
+    spells: data.spells?.map(s => ({ name: s.name, level: s.level, maxLevel: s.maxLevel }))
+  };
+}
+
+/**
+ * Helper to summarize clan data to reduce token count
+ */
+function summarizeClan(data) {
+  if (!data) return null;
+  return {
+    name: data.name,
+    tag: data.tag,
+    clanLevel: data.clanLevel,
+    members: data.members, // Just the count
+    type: data.type,
+    warWins: data.warWins,
+    warLosses: data.warLosses,
+    warTies: data.warTies,
+    isWarLogPublic: data.isWarLogPublic,
+    description: data.description
+  };
+}
+
+/**
+ * Helper to summarize war data to reduce token count
+ */
+function summarizeWar(data) {
+  if (!data || data.state === 'notInWar') return { state: 'notInWar' };
+  return {
+    state: data.state,
+    teamSize: data.teamSize,
+    startTime: data.startTime,
+    endTime: data.endTime,
+    clan: {
+      name: data.clan.name,
+      tag: data.clan.tag,
+      stars: data.clan.stars,
+      destructionPercentage: data.clan.destructionPercentage,
+      attacks: data.clan.attacks
+    },
+    opponent: {
+      name: data.opponent.name,
+      tag: data.opponent.tag,
+      stars: data.opponent.stars,
+      destructionPercentage: data.opponent.destructionPercentage
+    }
+  };
+}
+
+/**
+ * Call Anthropic Claude API
+ */
+async function callClaude(messages, systemPrompt, env) {
+  if (!env.ANTHROPIC_API_KEY) {
+    throw new Error('Anthropic API key not configured in worker environment');
+  }
+
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': env.ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-5',
+      max_tokens: 4096,
+      system: systemPrompt,
+      messages: messages
+    })
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`Anthropic API Error: ${errText}`);
+  }
+
+  const data = await response.json();
+  return { response: data.content[0].text };
+}
+
+/**
+ * Handle specific analysis requests using Claude
+ */
+async function handleAnalysisRequest(body, apiKey, env, ctx) {
+  const { action, playerTag, clanTag, messages } = body;
+  let systemPrompt = "You are a Clash of Clans expert assistant. Use Markdown to format your response.";
+  let userContent = "";
+  
+  // 1. Handle specific analysis actions (Ported from index.js)
+  if (action === 'analyze-player') {
+    const data = await getPlayer(playerTag, apiKey, env, ctx);
+    const summary = summarizePlayer(data);
+    userContent = `Please analyze the Clash of Clans player with tag ${playerTag}. Include their town hall level, trophies, and notable achievements. Suggest potential areas for improvement based on their stats.\n\nPlayer Data:\n${JSON.stringify(summary, null, 2)}`;
+  
+  } else if (action === 'analyze-clan') {
+    const data = await getClan(clanTag, apiKey, env);
+    const summary = summarizeClan(data);
+    userContent = `Please analyze the Clash of Clans clan with tag ${clanTag}. Include information about:
+1. Basic clan stats (level, members, war record)
+2. Leadership composition and activity
+3. Member breakdown by Town Hall levels
+4. Trophy range and league standings
+5. Clan Capital development
+6. War performance indicators
+7. Overall clan activity (donations, etc.)
+8. Recommendations for potential applicants
+9. Comparison to typical clans of similar level
+
+Based on this data, provide an overall assessment of the clan's strengths and potential areas for improvement.\n\nClan Data:\n${JSON.stringify(summary, null, 2)}`;
+
+  } else if (action === 'analyze-current-war') {
+    const data = await getCurrentWar(clanTag, apiKey, env);
+    const summary = summarizeWar(data);
+    userContent = `Please analyze the current clan war for clan ${clanTag}. Include:
+1. War overview (clan vs opponent, size, start/end time)
+2. Current war status (preparation, in war, ended)
+3. Current score comparison (stars and destruction percentage)
+4. Attack statistics for both clans (attacks used, average stars)
+5. Remaining attacks and potential maximum stars
+6. Best performing members so far
+7. Town Hall level distribution comparison
+8. Strategic recommendations based on the current situation
+
+If the war is in preparation phase, focus on the matchup analysis and strategic recommendations based on the lineup.\n\nWar Data:\n${JSON.stringify(summary, null, 2)}`;
+
+  } else if (action === 'analyze-war-log') {
+    const data = await getWarLog(clanTag, apiKey, env, 10);
+    userContent = `Please analyze the war log for clan ${clanTag} using the last 10 wars. Include:
+1. Overall win-loss record and win percentage
+2. Average stars per war
+3. Average destruction percentage
+4. Performance trends
+5. Recommendations for improving war performance\n\nWar Log Data:\n${JSON.stringify(data, null, 2)}`;
+
+  } else {
+    // Default Chat Mode
+    // If it's a general chat, we pass the conversation history
+    // We can optionally inject a small player summary for context if available
+    if (playerTag) {
+      try {
+        const p = await getPlayer(playerTag, apiKey, env, ctx);
+        systemPrompt += `\n\nCurrent User Context: ${p.name} (TH${p.townHallLevel})`;
+      } catch (e) {}
+    }
+    return await callClaude(messages, systemPrompt, env);
+  }
+
+  // For specific actions, we start a fresh conversation with the specific prompt
+  return await callClaude([{ role: 'user', content: userContent }], systemPrompt, env);
+}
+
+/**
  * Main request handler
  */
-async function handleRequest(request, env) {
+async function handleRequest(request, env, ctx) {
   const url = new URL(request.url);
   const path = url.pathname;
   const apiKey = env.CLASH_API_KEY;
@@ -385,12 +618,35 @@ async function handleRequest(request, env) {
 
   try {
     // Get player
+    if (path === '/chat' && request.method === 'POST') {
+      const body = await request.json();
+      const { messages, action } = body;
+      
+      if (!action && (!messages || !Array.isArray(messages))) {
+        return errorResponse('Messages array is required', 400);
+      }
+
+      const response = await handleAnalysisRequest(body, apiKey, env, ctx);
+      return jsonResponse(response);
+    }
+
+    // Get player (GET)
     if (path === '/get-player') {
       const tag = url.searchParams.get('tag');
       if (!tag) {
         return errorResponse('Player tag is required', 400);
       }
-      const data = await getPlayer(tag, apiKey, env);
+      const data = await getPlayer(tag, apiKey, env, ctx);
+      return jsonResponse(data);
+    }
+
+    // Get player history
+    if (path === '/get-player-history') {
+      const tag = url.searchParams.get('tag');
+      if (!tag) {
+        return errorResponse('Player tag is required', 400);
+      }
+      const data = await getPlayerHistory(tag, env);
       return jsonResponse(data);
     }
 
@@ -496,6 +752,6 @@ export default {
     }
 
     // Handle actual request
-    return handleRequest(request, env);
+    return handleRequest(request, env, ctx);
   },
 };

@@ -16,6 +16,11 @@ preview_id = "581edcb9e89b49ebbdf9f7a489c798ae"  # Replace with preview ID
 [ai]
 binding = "AI"
 
+[[d1_databases]]
+binding = "coc_stats"
+database_name = "coc-stats"
+database_id = "26cd213a-66c6-4ddc-9625-01ffb82a913d"
+
 # For custom domains (optional)
 # routes = [
 #   { pattern = "clash-api.yourdomain.com/*", zone_name = "yourdomain.com" }

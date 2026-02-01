@@ -2,6 +2,9 @@ import asyncio
 import coc
 import subprocess
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 async def rotate_clash_key():
     email = os.environ.get("COC_EMAIL")
