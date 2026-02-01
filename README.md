@@ -26,9 +26,15 @@ Keep both of these terminals running. ngrok will give you a public URL (e.g., `h
 
 2.  **Create an API Key:** Once logged in, create a new API key.
 
-3.  **Whitelist your IP:** This is a crucial step. In the key creation screen, you must add the IP address from your ngrok tunnel (or your static server IP) to the list of allowed IPs. You can find the ngrok IP address in the "Host" section of your running ngrok tunnel details.
+3.  **Whitelist your IP:** This is a crucial step. In the key creation screen, you must add the IP address from your ngrok tunnel to the list of allowed IPs.
 
-    ![ngrok IP](https://i.imgur.com/gYV2fC7.png)
+    When you run ngrok, it provides a "Forwarding" URL. To find the IP address to whitelist, you can either:
+    *   **Use the `ping` command:** Open a new terminal and ping the hostname of your forwarding URL (the part after `https://` and before `.ngrok-free.app`). For example:
+        ```bash
+        ping random-string.ngrok-free.app
+        ```
+        The IP address returned by the ping is what you need to whitelist.
+    *   **Check the ngrok dashboard:** Log in to your [ngrok Dashboard](https://dashboard.ngrok.com/tunnels/agents) online, and you can see the IP addresses of your active tunnels.
 
 ## Step 3: Create and Deploy the Cloudflare Worker
 
@@ -52,18 +58,26 @@ Keep both of these terminals running. ngrok will give you a public URL (e.g., `h
 
 ## (Optional) Local Development
 
-To run and test the worker on your local machine:
+To run and test the worker on your local machine without `ngrok`:
 
-1.  **Create a `.dev.vars` file:** In the root of the project, create a new file named `.dev.vars`.
+1.  **Create and configure `.dev.vars` file:** 
+    *   In the root of the project, create a new file named `.dev.vars` if it doesn't exist.
+    *   Add your API key and set the `PROXY_URL` to your local relay server.
+        ```
+        CLASH_API_KEY="<your-clash-of-clans-api-key>"
+        PROXY_URL="http://localhost:3000"
+        ```
+2.  **Whitelist your Network IP:** When running the worker locally, requests to the Clash of Clans API are relayed through your local machine. Therefore, you must add **your computer's public IP address** to the allowed list in the [Clash of Clans Developer Portal](https://developer.clashofclans.com/).
 
-2.  **Add your API key:** Add the following line to the file, replacing the placeholder with your actual key:
-    ```
-    CLASH_API_KEY="<your-clash-of-clans-api-key>"
-    ```
-3.  **Run with Wrangler:** Use the Cloudflare Wrangler CLI to run the worker locally. This will automatically pick up the variables from your `.dev.vars` file.
-    ```bash
-    wrangler dev
-    ```
+3.  **Run the Relay and Worker:**
+    *   Start the relay server in a terminal:
+        ```bash
+        node relay.js
+        ```
+    *   In another terminal, start the worker with Wrangler:
+        ```bash
+        wrangler dev
+        ```
 
 # Available tools
 
